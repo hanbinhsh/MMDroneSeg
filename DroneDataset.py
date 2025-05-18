@@ -57,14 +57,12 @@ def get_dog_images(img):
 
 
 def threshold_segmentation(img):
+    """Apply threshold segmentation to the image"""
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    gray_eq = cv2.equalizeHist(gray)
-    gray_eq = cv2.GaussianBlur(gray_eq, (5, 5), 5)
-    edges = cv2.Canny(gray_eq, 150, 200)
-    _, thresh = cv2.threshold(gray_eq, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    # 融合边缘和阈值图（例如按权重叠加）
-    combined = cv2.bitwise_or(thresh, edges)
-    return cv2.cvtColor(combined, cv2.COLOR_GRAY2RGB)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Convert single channel to three channels
+    thresh_rgb = cv2.cvtColor(thresh, cv2.COLOR_GRAY2RGB)
+    return thresh_rgb
 
 
 def color_to_label(mask_rgb):
@@ -377,8 +375,8 @@ if __name__ == "__main__":
         axs[2].imshow(original_mask_color)
         axs[2].set_title("Original Mask (Debug)")
 
-        axs[3].imshow(thresh_rgb)
-        axs[3].set_title("Threshold")
+        axs[3].imshow(mask_color)
+        axs[3].set_title("Current Segmentation Mask")
 
         for ax in axs:
             ax.axis('off')

@@ -8,9 +8,8 @@ import json
 from datetime import datetime
 import torchvision.transforms as transforms
 
-WIDTH = 512  # 960
-HEIGHT = 384  # 736
-
+WIDTH =  512       #960
+HEIGHT = 384       #736
 
 # 定义一个自定义的Collate函数类，可以在初始化时接收caption_generator
 class CustomCollator:
@@ -83,23 +82,12 @@ def main():
         'lr': 3e-4,
         'lr_step': 10,
         'lr_gamma': 0.1,
-        'epochs': 1000,
+        'epochs':1000,
         'early_stop_patience': 50,
         'num_classes': 5,  # 数据集类别
         'result_dir': f'./results/run_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
         'text_embed_dim': 512,  # CLIP文本嵌入维度
         'max_text_len': 20,  # 最大文本长度
-
-        # 边缘损失配置
-        'edge_loss_type': 'canny',  # 'canny' 或 'boundary'
-        'edge_loss_weight': 0.5,  # 边缘损失的权重
-        'ce_loss_weight': 1.0,  # 交叉熵损失的权重
-        'dice_loss_weight': 0.5,  # Dice损失的权重
-
-        # Canny边缘检测参数
-        'canny_low_threshold': 0.1,
-        'canny_high_threshold': 0.3,
-        'canny_sigma': 1.0,
     }
 
     # 创建结果保存目录
@@ -149,7 +137,6 @@ def main():
     print(f"训练集样本数: {len(train_dataset)}")
     print(f"验证集样本数: {len(val_dataset)}")
     print(f"模型将保存到: {config['result_dir']}")
-    print(f"边缘损失类型: {config['edge_loss_type']}, 权重: {config['edge_loss_weight']}")
 
     # 开始训练
     train_model(train_loader, val_loader, config)

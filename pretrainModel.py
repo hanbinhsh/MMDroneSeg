@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 
-
 class ResNetEncoder(nn.Module):
     def __init__(self, latent_dim=256, pretrained=True):
         super().__init__()
@@ -21,13 +20,9 @@ class ResNetEncoder(nn.Module):
         self.layer3 = resnet.layer3  # 1/16 resolution, 256 channels
         self.layer4 = resnet.layer4  # 1/32 resolution, 512 channels
 
-        # 计算特征图大小 (假设输入为 (384, 512))
-        self.feature_size = (384 // 32, 512 // 32)  # (12, 16)
-        self.flattened_size = 512 * self.feature_size[0] * self.feature_size[1]
-
         # 添加VAE特定层以生成潜在空间分布参数
-        self.mu = nn.Linear(self.flattened_size, latent_dim)
-        self.log_var = nn.Linear(self.flattened_size, latent_dim)
+        self.mu = nn.Linear(512 * (512 // 32) * (384 // 32), latent_dim)  # 根据输入大小调整
+        self.log_var = nn.Linear(512 * (512 // 32) * (384 // 32), latent_dim)
 
         self.out_channels = 512
 
@@ -57,14 +52,10 @@ class ResNetEncoder(nn.Module):
 
 
 class VAEDecoder(nn.Module):
-    def __init__(self, latent_dim=256, input_height=384, input_width=512):
+    def __init__(self, latent_dim=256):
         super().__init__()
-        # 计算特征图大小
-        self.feature_size = (input_height // 32, input_width // 32)  # (12, 16) for 384x512
-        self.flattened_size = 512 * self.feature_size[0] * self.feature_size[1]
-
         # 从潜在空间投影到初始特征图
-        self.latent_proj = nn.Linear(latent_dim, self.flattened_size)
+        self.latent_proj = nn.Linear(latent_dim, 512 * (512 // 32) * (384 // 32))
 
         # 上采样块 - 深度逐渐减小，分辨率增加
         self.up1 = nn.Sequential(
@@ -102,7 +93,7 @@ class VAEDecoder(nn.Module):
     def forward(self, z):
         # 将潜在向量重塑为初始特征图
         x = self.latent_proj(z)
-        x = x.view(-1, 512, self.feature_size[0], self.feature_size[1])  # 重塑为特征图
+        x = x.view(-1, 512, 512 // 32, 384 // 32)  # 重塑为特征图
 
         # 上采样
         x = self.up1(x)
@@ -115,14 +106,10 @@ class VAEDecoder(nn.Module):
 
 
 class VAEDecoderWithSkips(nn.Module):
-    def __init__(self, latent_dim=256, input_height=384, input_width=512):
+    def __init__(self, latent_dim=256):
         super().__init__()
-        # 计算特征图大小
-        self.feature_size = (input_height // 32, input_width // 32)  # (12, 16) for 384x512
-        self.flattened_size = 512 * self.feature_size[0] * self.feature_size[1]
-
         # 从潜在空间投影到初始特征图
-        self.latent_proj = nn.Linear(latent_dim, self.flattened_size)
+        self.latent_proj = nn.Linear(latent_dim, 512 * (512 // 32) * (384 // 32))
 
         # 上采样块 - 每个块都接收上一层输出和对应的跳跃连接
         self.up1 = nn.Sequential(
@@ -186,7 +173,7 @@ class VAEDecoderWithSkips(nn.Module):
 
         # 将潜在向量重塑为初始特征图
         x = self.latent_proj(z)
-        x = x.view(-1, 512, self.feature_size[0], self.feature_size[1])  # 重塑为特征图
+        x = x.view(-1, 512, 512 // 32, 384 // 32)  # 重塑为特征图
 
         # 上采样并融合跳跃连接
         x = self.up1(x)
@@ -216,16 +203,15 @@ class VAEDecoderWithSkips(nn.Module):
 
 
 class ResNetVAE(nn.Module):
-    def __init__(self, latent_dim=256, use_skip_connections=True, input_height=384, input_width=512):
+    def __init__(self, latent_dim=256, use_skip_connections=True):
         super().__init__()
         self.encoder = ResNetEncoder(latent_dim=latent_dim)
         self.use_skip_connections = use_skip_connections
 
         if use_skip_connections:
-            self.decoder = VAEDecoderWithSkips(latent_dim=latent_dim, input_height=input_height,
-                                               input_width=input_width)
+            self.decoder = VAEDecoderWithSkips(latent_dim=latent_dim)
         else:
-            self.decoder = VAEDecoder(latent_dim=latent_dim, input_height=input_height, input_width=input_width)
+            self.decoder = VAEDecoder(latent_dim=latent_dim)
 
     def forward(self, x):
         # 编码
@@ -254,7 +240,6 @@ def vae_loss(recon_x, x, mu, log_var, kld_weight=0.005):
     loss = recon_loss + kld_weight * kld_loss
 
     return loss, recon_loss, kld_loss
-
 
 def load_pretrained_encoder_for_segmodel(seg_model, encoder_path='pretrained_resnet_encoder.pth'):
     """
