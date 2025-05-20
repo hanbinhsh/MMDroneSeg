@@ -2,7 +2,7 @@ import torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from pretrainModel import vae_loss,ResNetVAE
+from pretrainModel import vae_loss, ResNetVAE
 from torch.utils.data import Dataset
 from PIL import Image
 import os
@@ -36,7 +36,7 @@ def train_resnet_vae(model, train_loader, optimizer, device, epoch, kld_weight=0
     recon_loss_sum = 0
     kld_loss_sum = 0
 
-    for batch_idx, (data) in enumerate(train_loader):
+    for batch_idx, data in enumerate(train_loader):
         data = data.to(device)
         optimizer.zero_grad()
 
@@ -50,7 +50,7 @@ def train_resnet_vae(model, train_loader, optimizer, device, epoch, kld_weight=0
         recon_loss_sum += recon_loss.item()
         kld_loss_sum += kld_loss.item()
 
-        if batch_idx % 100 == 0:
+        if batch_idx % 10 == 0:
             print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
                   f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item() / len(data):.6f}')
 
@@ -69,47 +69,74 @@ def pretrain_resnet():
     ResNet VAE预训练主函数
     """
     # 参数设置
-    batch_size = 32
+    batch_size = 16  # 减小批量大小以节省内存
     epochs = 50
     learning_rate = 1e-4
     latent_dim = 256
     use_skip_connections = True  # 是否使用跳跃连接
+    input_height = 384
+    input_width = 512
 
     # 设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     # 数据加载和预处理
     transform = transforms.Compose([
-        transforms.Resize((384, 512)),
+        transforms.Resize((input_height, input_width)),
         transforms.ToTensor()
     ])
 
-    # 替换为你的数据集
-    train_dataset = UnlabeledImageDataset('../dataset/Drone/classes_dataset/classes_dataset/original_images/', transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # 替换为你的数据集路径
+    data_path = '../dataset/Drone/classes_dataset/classes_dataset/original_images/'
+    print(f"Loading data from: {data_path}")
+
+    if not os.path.exists(data_path):
+        print(f"WARNING: Dataset path {data_path} does not exist!")
+        print("Please check your dataset path and update accordingly.")
+        return
+
+    train_dataset = UnlabeledImageDataset(data_path, transform=transform)
+    print(f"Dataset size: {len(train_dataset)} images")
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
 
     # 初始化模型
-    model = ResNetVAE(latent_dim=latent_dim, use_skip_connections=use_skip_connections).to(device)
+    model = ResNetVAE(
+        latent_dim=latent_dim,
+        use_skip_connections=use_skip_connections,
+        input_height=input_height,
+        input_width=input_width
+    ).to(device)
+
     optimizer = Adam(model.parameters(), lr=learning_rate)
+
+    # 创建保存检查点的目录
+    os.makedirs('checkpoints', exist_ok=True)
 
     # 训练循环
     for epoch in range(1, epochs + 1):
         train_loss, recon_loss, kld_loss = train_resnet_vae(
             model, train_loader, optimizer, device, epoch)
 
-        # 可以添加验证步骤和保存检查点
-        if epoch % 5 == 0:
+        # 保存检查点
+        if epoch % 5 == 0 or epoch == 1:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': train_loss,
-            }, f'resnet_vae_epoch_{epoch}.pth')
+                'recon_loss': recon_loss,
+                'kld_loss': kld_loss,
+            }, f'checkpoints/resnet_vae_epoch_{epoch}.pth')
+            print(f"Checkpoint saved at epoch {epoch}")
 
     # 最终保存预训练的编码器权重
     torch.save(model.encoder.state_dict(), 'pretrained_resnet_encoder.pth')
+    print("Pretrained encoder weights saved to 'pretrained_resnet_encoder.pth'")
 
     return model.encoder
+
 
 if __name__ == '__main__':
     pretrain_resnet()

@@ -8,8 +8,8 @@ import json
 from datetime import datetime
 import torchvision.transforms as transforms
 
-WIDTH =  512       #960
-HEIGHT = 384       #736
+WIDTH =  480       #960
+HEIGHT = 368       #736
 
 # 定义一个自定义的Collate函数类，可以在初始化时接收caption_generator
 class CustomCollator:
@@ -88,6 +88,7 @@ def main():
         'result_dir': f'./results/run_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
         'text_embed_dim': 512,  # CLIP文本嵌入维度
         'max_text_len': 20,  # 最大文本长度
+        'pretrained_encoder_path': 'pretrained_resnet_encoder.pth',  # 预训练的编码器路径
     }
 
     # 创建结果保存目录
@@ -100,6 +101,13 @@ def main():
     # 初始化设备
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
+
+    # 检查预训练模型路径是否存在
+    if 'pretrained_encoder_path' in config and os.path.exists(config['pretrained_encoder_path']):
+        print(f"Using pretrained encoder weights from: {config['pretrained_encoder_path']}")
+    else:
+        print("Warning: Pretrained encoder weights not found, using default pretrained ResNet.")
+        config['pretrained_encoder_path'] = None
 
     # 创建自定义collator
     collator = CustomCollator(config)

@@ -13,7 +13,12 @@ from utils import DiceLoss
 def train_model(train_loader, val_loader, config):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = MultiModalSegModel(num_classes=config['num_classes']).to(device)
+    # 使用预训练的编码器创建模型
+    model = MultiModalSegModel(
+        num_classes=config['num_classes'],
+        pretrained_encoder_path=config.get('pretrained_encoder_path', None)
+    ).to(device)
+
     criterion = nn.CrossEntropyLoss()
     dice_loss = DiceLoss()
     optimizer = optim.Adam(model.parameters(), lr=config['lr'])

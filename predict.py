@@ -12,8 +12,8 @@ from model import MultiModalSegModel
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-WIDTH =  512       #960
-HEIGHT = 384       #736
+WIDTH =  480  # 960
+HEIGHT = 368  # 736
 
 # CLASS_NAMES = [
 #     "background", "aeroplane", "bicycle", "bird", "boat", "bottle",
@@ -25,9 +25,19 @@ CLASS_NAMES = [
     "obstacles", "water", "soft-surfaces", "moving-objects", "landing-zones"
 ]
 
-def load_model(model_path, num_classes=5, device='cuda'):
+# 添加指定的颜色映射
+CLASS_COLORS = {
+    "obstacles": (155, 38, 182),  # 紫色
+    "water": (14, 135, 204),  # 蓝色
+    "soft-surfaces": (124, 252, 0),  # 亮绿色
+    "moving-objects": (255, 20, 147),  # 粉红色
+    "landing-zones": (169, 169, 169),  # 灰色
+}
+
+
+def load_model(model_path, num_classes=5, device='cuda', pretrained_encoder_path=None):
     """Load the trained segmentation model."""
-    model = MultiModalSegModel(num_classes=num_classes).to(device)
+    model = MultiModalSegModel(num_classes=num_classes, pretrained_encoder_path=pretrained_encoder_path).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     return model
@@ -156,32 +166,34 @@ def predict(model, image_path, device='cuda'):
 
 def visualize_prediction(prediction, original_image, output_path=None):
     """Visualize the segmentation prediction."""
-    # Create colormap for visualization
-    cmap = plt.cm.get_cmap('tab20', len(CLASS_NAMES))
-    colors = [mcolors.rgb2hex(cmap(i)[:3]) for i in range(len(CLASS_NAMES))]
-
-    # Create RGB image from prediction
+    # 使用指定的颜色映射而不是自动生成的颜色
     h, w = prediction.shape
     rgb_pred = np.zeros((h, w, 3), dtype=np.uint8)
 
-    # Create a legend mapping
+    # 创建图例元素
     legend_elements = []
 
-    # Find unique classes in the prediction
+    # 找出预测中的唯一类别
     unique_classes = np.unique(prediction)
 
-    # Assign colors to each class
+    # 为每个类别分配颜色
     for i in unique_classes:
-        if i < len(CLASS_NAMES):  # Ensure class index is valid
-            mask = prediction == i
-            rgb_color = np.array(mcolors.hex2color(colors[i])) * 255
-            rgb_pred[mask] = rgb_color
-
-            # Add to legend if this class appears in the image
+        if i < len(CLASS_NAMES):  # 确保类别索引有效
             class_name = CLASS_NAMES[i]
-            legend_elements.append(plt.Rectangle((0, 0), 1, 1, color=colors[i], label=class_name))
+            if class_name in CLASS_COLORS:
+                # 从BGR格式转为RGB格式（因为OpenCV使用BGR）
+                color_bgr = CLASS_COLORS[class_name]
+                color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])
 
-    # Create the visualization
+                # 应用颜色到掩码
+                mask = prediction == i
+                rgb_pred[mask] = color_bgr
+
+                # 为matplotlib图例创建RGB颜色
+                color_norm = [c / 255.0 for c in color_bgr]
+                legend_elements.append(plt.Rectangle((0, 0), 1, 1, color=color_norm, label=class_name))
+
+    # 创建可视化
     plt.figure(figsize=(12, 6))
 
     plt.subplot(1, 2, 1)
@@ -194,7 +206,7 @@ def visualize_prediction(prediction, original_image, output_path=None):
     plt.title('Segmentation Prediction')
     plt.axis('off')
 
-    # Add legend
+    # 添加图例
     plt.figlegend(handles=legend_elements, loc='lower center', ncol=min(5, len(unique_classes)))
 
     plt.tight_layout()
@@ -215,13 +227,15 @@ def main():
     parser.add_argument('--output', type=str, default=None, help='Path to save visualization output')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                         help='Device to run the model on (cuda/cpu)')
+    parser.add_argument('--pep', type=str, default='pretrained_resnet_encoder.pth',
+                        help='Pretrained Encoder Path')
     args = parser.parse_args()
 
     print(f"Using device: {args.device}")
 
     # Load model
     print("Loading model...")
-    model = load_model(args.model, device=args.device)
+    model = load_model(args.model, device=args.device, pretrained_encoder_path=args.pep)
 
     # Make prediction
     print(f"Processing image: {args.image}")

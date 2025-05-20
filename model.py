@@ -3,13 +3,16 @@ import torch.nn as nn
 import torchvision.models as models
 from einops import rearrange
 
-WIDTH =  512       #960
-HEIGHT = 384       #736
+WIDTH =  480       #960
+HEIGHT = 368       #736
 
 class ResNetEncoder(nn.Module):
-    def __init__(self, pretrained=True):
+    def __init__(self, pretrained=True, pretrained_path=None):
         super().__init__()
-        resnet = models.resnet34(pretrained=pretrained)
+        # 如果提供了预训练路径，则使用预训练的VAE编码器权重
+        # 否则使用默认的预训练ResNet权重
+        # resnet = models.resnet34(pretrained=(pretrained and pretrained_path is None))
+        resnet = models.resnet34(pretrained=True)
 
         # Store intermediate feature maps for skip connections
         self.layer0 = nn.Sequential(
@@ -23,11 +26,46 @@ class ResNetEncoder(nn.Module):
         self.layer3 = resnet.layer3  # 1/16 resolution, 256 channels
         self.layer4 = resnet.layer4  # 1/32 resolution, 512 channels
 
+        # 如果提供了预训练VAE编码器权重，则加载它们
+        # if pretrained_path is not None and pretrained:
+        #     self.load_pretrained_weights(pretrained_path)
+        #     print(f"Loaded pretrained weights from {pretrained_path}")
+
         # Freeze all encoder parameters
         for param in self.parameters():
             param.requires_grad = False
 
+        # for name, param in self.named_parameters():
+        #     if 'layer4' in name:
+        #         param.requires_grad = True
+
         self.out_channels = 512
+
+    def load_pretrained_weights(self, pretrained_path):
+        """加载预训练的编码器权重"""
+        try:
+            # 尝试直接加载状态字典
+            pretrained_dict = torch.load(pretrained_path)
+
+            # 如果加载的是整个VAE的检查点，需要提取encoder部分
+            if 'encoder.layer0.0.weight' in pretrained_dict:
+                # 整个VAE模型的状态字典，提取encoder部分
+                encoder_dict = {}
+                for k, v in pretrained_dict.items():
+                    if k.startswith('encoder.'):
+                        encoder_dict[k[8:]] = v  # 去掉'encoder.'前缀
+                pretrained_dict = encoder_dict
+
+            # 过滤掉不匹配的键
+            model_dict = self.state_dict()
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+
+            # 加载权重
+            model_dict.update(pretrained_dict)
+            self.load_state_dict(model_dict)
+            print(f"Successfully loaded {len(pretrained_dict)} layers from pretrained weights.")
+        except Exception as e:
+            print(f"Error loading pretrained weights: {e}")
 
     def forward(self, x):
         # Store intermediate features for skip connections
@@ -87,6 +125,19 @@ class FusionTransformer(nn.Module):
         x = rearrange(x, 'b (h w) c -> b c h w', h=H_ds, w=W_ds)
         return x
 
+class UpsampleBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
 
 class SkipConnectionBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -94,7 +145,10 @@ class SkipConnectionBlock(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            # nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            # nn.BatchNorm2d(out_channels),
+            # nn.ReLU(inplace=True),
         )
 
     def forward(self, x, skip):
@@ -119,8 +173,15 @@ class Decoder(nn.Module):
             nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, num_classes, kernel_size=1)
+            nn.Conv2d(32, num_classes, kernel_size=1),
+            # nn.Conv2d(num_classes, num_classes, kernel_size=3, padding=1),
+            # nn.BatchNorm2d(num_classes),
+            # nn.ReLU(inplace=True),
+            # nn.Conv2d(num_classes, num_classes, kernel_size=1)
         )
+
+        # self.upsample1 = UpsampleBlock(num_classes, num_classes)  # 96×128 → 192×256
+        # self.upsample2 = UpsampleBlock(num_classes, num_classes)  # 192×256 → 384×512
 
     def forward(self, x, skip_features, size):
         # Unpack skip features
@@ -134,14 +195,17 @@ class Decoder(nn.Module):
 
         # Final convolution and upsampling to original size
         x = self.final(x)
+        # x = self.upsample1(x)  # → 192 × 256
+        # x = self.upsample2(x)  # → 384 × 512
         x = nn.functional.interpolate(x, size=size, mode='bilinear', align_corners=False)
         return x
 
 
 class MultiModalSegModel(nn.Module):
-    def __init__(self, text_dim=512, num_classes=21):
+    def __init__(self, text_dim=512, num_classes=21, pretrained_encoder_path=None):
         super().__init__()
-        shared_encoder = ResNetEncoder()
+        # 创建共享编码器，同时加载预训练权重
+        shared_encoder = ResNetEncoder(pretrained=True, pretrained_path=pretrained_encoder_path)
         self.encoder_image = shared_encoder
         self.encoder_dog = shared_encoder
         self.encoder_thresh = shared_encoder

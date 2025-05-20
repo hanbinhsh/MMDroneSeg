@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 import random
 
-WIDTH =  512       #960
-HEIGHT = 384       #736
+WIDTH =  480       #960
+HEIGHT = 368       #736
 
 # Drone dataset class mappings
 CLASS_NAMES = [
@@ -375,8 +375,8 @@ if __name__ == "__main__":
         axs[2].imshow(original_mask_color)
         axs[2].set_title("Original Mask (Debug)")
 
-        axs[3].imshow(mask_color)
-        axs[3].set_title("Current Segmentation Mask")
+        axs[3].imshow(thresh_rgb)
+        axs[3].set_title("Threshold")
 
         for ax in axs:
             ax.axis('off')
