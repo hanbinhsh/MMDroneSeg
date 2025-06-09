@@ -80,7 +80,7 @@ def main():
         'batch_size': 24,
         'num_workers': 0,
         'lr': 3e-4,
-        'lr_step': 10,
+        'lr_step': 30,
         'lr_gamma': 0.1,
         'epochs':1000,
         'early_stop_patience': 50,
