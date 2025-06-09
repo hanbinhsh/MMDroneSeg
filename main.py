@@ -81,7 +81,7 @@ def main():
         'num_workers': 0,
         'lr': 3e-4,
         'lr_step': 30,
-        'lr_gamma': 0.1,
+        'lr_gamma': 0.7,
         'epochs':1000,
         'early_stop_patience': 50,
         'num_classes': 5,  # 数据集类别

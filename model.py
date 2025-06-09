@@ -505,7 +505,7 @@ class MultiModalSegModel(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        self.fusion = VisionTransformerFusion(in_channels=512, embed_dim=256, num_heads=8, num_layers=2)
+        self.fusion = VisionTransformerFusion(in_channels=512, embed_dim=256, num_heads=8, num_layers=2, patch_size=4)
         self.decoder = Decoder(in_channels=256, num_classes=num_classes)
 
     def forward(self, image, dog, thresh, text_embeds):
