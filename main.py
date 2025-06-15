@@ -79,16 +79,19 @@ def main():
         'data_root': '../dataset/Drone/classes_dataset/classes_dataset/',
         'batch_size': 24,
         'num_workers': 0,
-        'lr': 3e-4,
+        'lr': 5e-4,
         'lr_step': 30,
         'lr_gamma': 0.7,
         'epochs':1000,
-        'early_stop_patience': 50,
+        'early_stop_patience': 20,
         'num_classes': 5,  # 数据集类别
         'result_dir': f'./results/run_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
         'text_embed_dim': 512,  # CLIP文本嵌入维度
-        'max_text_len': 20,  # 最大文本长度
+        'max_text_len': 32,  # 最大文本长度
         'pretrained_encoder_path': 'pretrained_resnet_encoder.pth',  # 预训练的编码器路径
+
+        'edge_weight': 0.3,       # 边缘损失权重
+        'edge_start_epoch': 30,  # 边缘损失开始轮数
     }
 
     # 创建结果保存目录

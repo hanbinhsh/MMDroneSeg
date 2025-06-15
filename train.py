@@ -1,13 +1,13 @@
 import os
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
 from model import MultiModalSegModel
-from utils import compute_metrics  # 假设你已实现F1、IoU等指标计算函数
-from utils import DiceLoss
+from utils import compute_metrics
+from utils import DiceLoss, FocalLoss, EdgeLoss
 
 
 def train_model(train_loader, val_loader, config):
@@ -21,17 +21,29 @@ def train_model(train_loader, val_loader, config):
 
     criterion = nn.CrossEntropyLoss()
     dice_loss = DiceLoss()
+
+    # Focal loss
+    freq = np.array([0.0868, 0.233, 0.3438, 0.0171, 0.529])
+    # 1. 倒数归一化
+    # alpha = 1.0 / (freq + 1e-6)
+    # alpha = alpha / alpha.sum()  # 归一化成概率分布
+    # 2. 1-freq
+    alpha = 1.0 - freq
+    alpha = alpha / alpha.sum()
+    alpha_tensor = torch.tensor(alpha, dtype=torch.float32)
+    focal_loss = FocalLoss(gamma=2.0, alpha=alpha_tensor)
+
+    # Edge loss
+    edge_loss_fn = EdgeLoss(mode='l1').to(device)  # 或 'bce'
+
     optimizer = optim.Adam(model.parameters(), lr=config['lr'])
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=config['lr_step'], gamma=config['lr_gamma'])
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6)
 
     best_val_miou = 0.0
     early_stop_counter = 0
     result_file = os.path.join(config['result_dir'], 'result.txt')
     os.makedirs(config['result_dir'], exist_ok=True)
-
-    # class_names = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle",
-    #                "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse",
-    #                "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
 
     class_names = [
         "obstacles", "water", "soft-surfaces", "moving-objects", "landing-zones"
@@ -51,7 +63,12 @@ def train_model(train_loader, val_loader, config):
             image, dog, thresh, text, label = [b.to(device) for b in batch]
             optimizer.zero_grad()
             output = model(image, dog, thresh, text)
-            loss = criterion(output, label) + dice_loss(output, label)
+            # loss = criterion(output, label) + dice_loss(output, label)
+            loss = criterion(output, label) + focal_loss(output, label)
+            if epoch + 1 >= config['edge_start_epoch']:
+                edge_loss = edge_loss_fn(output, label)
+                loss += config['edge_weight'] * edge_loss
+
             loss.backward()
             optimizer.step()
 
@@ -77,7 +94,12 @@ def train_model(train_loader, val_loader, config):
             for batch in tqdm(val_loader, desc=f"Val {epoch+1}/{config['epochs']}"):
                 image, dog, thresh, text, label = [b.to(device) for b in batch]
                 output = model(image, dog, thresh, text)
-                loss = criterion(output, label) + dice_loss(output, label)
+                # loss = criterion(output, label) + dice_loss(output, label)
+                loss = criterion(output, label) + focal_loss(output, label)
+                if epoch + 1 >= config['edge_start_epoch']:
+                    edge_loss = edge_loss_fn(output, label)
+                    loss += config['edge_weight'] * edge_loss
+
                 val_loss += loss.item()
 
                 pred = torch.argmax(output, dim=1)
@@ -112,3 +134,4 @@ def train_model(train_loader, val_loader, config):
             break
 
         scheduler.step()
+        # scheduler.step(val_loss)
