@@ -19,11 +19,12 @@ def train_model(train_loader, val_loader, config):
         pretrained_encoder_path=config.get('pretrained_encoder_path', None)
     ).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=255)
     dice_loss = DiceLoss()
 
     # Focal loss
-    freq = np.array([0.0868, 0.233, 0.3438, 0.0171, 0.529])
+    from experiments.data import audit
+    freq = np.array(audit(config['data_root'])['train_frequency'])
     # 1. 倒数归一化
     # alpha = 1.0 / (freq + 1e-6)
     # alpha = alpha / alpha.sum()  # 归一化成概率分布
@@ -74,8 +75,9 @@ def train_model(train_loader, val_loader, config):
 
             train_loss += loss.item()
             pred = torch.argmax(output, dim=1)
-            correct += (pred == label).sum().item()
-            total += torch.numel(label)
+            valid = label != 255
+            correct += ((pred == label) & valid).sum().item()
+            total += valid.sum().item()
             all_preds.append(pred.detach().cpu())
             all_labels.append(label.detach().cpu())
 
@@ -103,8 +105,9 @@ def train_model(train_loader, val_loader, config):
                 val_loss += loss.item()
 
                 pred = torch.argmax(output, dim=1)
-                correct += (pred == label).sum().item()
-                total += torch.numel(label)
+                valid = label != 255
+                correct += ((pred == label) & valid).sum().item()
+                total += valid.sum().item()
                 val_preds.append(pred.detach().cpu())
                 val_labels.append(label.detach().cpu())
 

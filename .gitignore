@@ -1,0 +1,79 @@
+# Python caches, local environments, and build artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.cache/
+.venv/
+venv/
+env/
+.tox/
+build/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local secrets (keep sanitized configuration examples available)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Downloaded third-party repositories and model weights
+# Sources and preparation commands are documented in EXPERIMENTS.md.
+/external/
+/weights/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.engine
+*.download
+*.part
+
+# Training outputs, checkpoints, predictions, logs, and generated figures
+# Ignoring these does not delete them; back up experimental results separately.
+/runs/
+/results/
+/outputs/
+/wandb/
+/lightning_logs/
+events.out.tfevents.*
+*.log
+*.tmp
+
+# Generated BLIP captions and CLIP feature caches; some exceed 100 MiB.
+# Keep clip_embeddings.py and blip_caption_generator.py under version control.
+/clip_embeddings/
+
+# Local datasets, if copied into this repository.
+# The current ../Drone dataset is already outside the repository root.
+/Drone/
+/data/
+/datasets/
+/semantic_drone_dataset/
+/classes_dataset/
+
+# Exported sample images and prediction previews in the repository root only.
+# Do not ignore all PNG/JSON/CSV/XLSX files: documentation and result summaries
+# may need to be versioned outside the generated-output directories above.
+/[0-9]*.png
+/input.png
+/output.png
+
+# Temporary Microsoft Office lock files; keep the actual comparison workbooks.
+~$*.xlsx
+~$*.docx
+~$*.pptx

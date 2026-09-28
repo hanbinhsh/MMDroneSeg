@@ -67,7 +67,7 @@ def threshold_segmentation(img):
 
 def color_to_label(mask_rgb):
     """Convert RGB mask to class ID mask with color tolerance"""
-    mask_label = np.zeros((mask_rgb.shape[0], mask_rgb.shape[1]), dtype=np.uint8)
+    mask_label = np.full((mask_rgb.shape[0], mask_rgb.shape[1]), 255, dtype=np.uint8)
 
     # For each pixel in the mask
     for cls_name, color in CLASS_COLORS.items():
@@ -185,11 +185,11 @@ class DroneDataset(Dataset):
             if random.random() > 0.5:
                 angle = random.randint(-30, 30)
 
-                def rotate(img, angle):
+                def rotate(img, angle, is_mask=False):
                     h, w = img.shape[:2]
                     center = (w // 2, h // 2)
                     rot_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-                    if len(img.shape) == 3:  # RGB image
+                    if not is_mask:
                         return cv2.warpAffine(img, rot_matrix, (w, h), flags=cv2.INTER_LINEAR)
                     else:  # For mask (single channel)
                         return cv2.warpAffine(img, rot_matrix, (w, h), flags=cv2.INTER_NEAREST)
@@ -197,7 +197,7 @@ class DroneDataset(Dataset):
                 image = rotate(image, angle)
                 dog_image = rotate(dog_image, angle)
                 thresh_image = rotate(thresh_image, angle)
-                mask_rgb = rotate(mask_rgb, angle)  # Rotate RGB mask
+                mask_rgb = rotate(mask_rgb, angle, is_mask=True)
 
             # Random crop
             crop_h, crop_w = 320, 480
@@ -234,7 +234,8 @@ class DroneDataset(Dataset):
             mask = color_to_label(mask_rgb)
 
         # Ensure mask has valid class IDs
-        mask = np.clip(mask, 0, len(CLASS_NAMES) - 1)
+        if not np.isin(mask, [0, 1, 2, 3, 4, 255]).all():
+            raise ValueError(f"Invalid labels in {image_id}")
 
         # Convert to tensor and normalize
         preprocess = transforms.Compose([

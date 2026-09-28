@@ -310,9 +310,9 @@ class VisionTransformerFusion(nn.Module):
 
 
 class ResNetEncoder(nn.Module):
-    def __init__(self, pretrained=True, pretrained_path=None):
+    def __init__(self, pretrained=True, pretrained_path=None, frozen=False):
         super().__init__()
-        resnet = models.resnet34(pretrained=True)
+        resnet = models.resnet34(weights=models.ResNet34_Weights.DEFAULT if pretrained and not pretrained_path else None)
 
         # Store intermediate feature maps for skip connections
         self.layer0 = nn.Sequential(
@@ -326,16 +326,18 @@ class ResNetEncoder(nn.Module):
         self.layer3 = resnet.layer3  # 1/16 resolution, 256 channels
         self.layer4 = resnet.layer4  # 1/32 resolution, 512 channels
 
-        # Freeze all encoder parameters
+        self.frozen = frozen
+        if pretrained_path:
+            self.load_pretrained_weights(pretrained_path)
         for param in self.parameters():
-            param.requires_grad = False
+            param.requires_grad = not frozen
 
         self.out_channels = 512
 
     def load_pretrained_weights(self, pretrained_path):
         """加载预训练的编码器权重"""
         try:
-            pretrained_dict = torch.load(pretrained_path)
+            pretrained_dict = torch.load(pretrained_path, map_location='cpu', weights_only=True)
 
             if 'encoder.layer0.0.weight' in pretrained_dict:
                 encoder_dict = {}
@@ -345,13 +347,22 @@ class ResNetEncoder(nn.Module):
                 pretrained_dict = encoder_dict
 
             model_dict = self.state_dict()
-            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict and v.shape == model_dict[k].shape}
+            missing = set(model_dict) - set(pretrained_dict)
+            if missing:
+                raise ValueError(f"Incomplete encoder checkpoint, missing {len(missing)} keys: {sorted(missing)[:5]}")
 
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
             print(f"Successfully loaded {len(pretrained_dict)} layers from pretrained weights.")
         except Exception as e:
-            print(f"Error loading pretrained weights: {e}")
+            raise RuntimeError(f"Error loading pretrained encoder: {pretrained_path}") from e
+
+    def train(self, mode=True):
+        super().train(mode)
+        if self.frozen:
+            super().train(False)
+        return self
 
     def forward(self, x):
         x0 = self.layer0(x)  # 1/4

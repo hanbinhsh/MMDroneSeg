@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from dataset import VOC2012Dataset
@@ -10,21 +11,23 @@ import torchvision.transforms as transforms
 
 WIDTH =  480       #960
 HEIGHT = 368       #736
+BASE_DIR = Path(__file__).resolve().parent
 
 # 定义一个自定义的Collate函数类，可以在初始化时接收caption_generator
 class CustomCollator:
-    def __init__(self, config):
+    def __init__(self, config, training=False):
         self.config = config
+        self.training = training
 
         # 载入文本嵌入文件
         try:
-            with open("./clip_embeddings/clip_text_embeddings_drone.json", "r") as f:
+            with open(BASE_DIR / "clip_embeddings/clip_text_embeddings_drone.json", "r") as f:
                 self.text_embeddings = json.load(f)
         except FileNotFoundError:
             print("Warning: clip_text_embeddings.json not found.")
             self.text_embeddings = {}
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
 
     def __call__(self, batch):
         resize_transform = transforms.Resize((HEIGHT, WIDTH))  # height, width
@@ -53,9 +56,7 @@ class CustomCollator:
                 if fname in self.text_embeddings:
                     text_embed = torch.tensor(self.text_embeddings[fname]).to(self.device)
                 else:
-                    print(f"Warning: No text embedding found for {fname}, using zero vector.")
-                    text_embed = torch.zeros(self.config['text_embed_dim']).to(self.device)
-                    exit(255)
+                    raise ValueError(f"Missing text embedding for {fname}")
                 text_embeds.append(text_embed)
 
         text_embeds = torch.stack(text_embeds)
@@ -67,8 +68,8 @@ class CustomCollator:
         seq_len = self.config['max_text_len']
         embed_dim = self.config['text_embed_dim']
         expanded_embeds = text_embeds.unsqueeze(1).expand(B, seq_len, embed_dim)
-        noise = torch.randn_like(expanded_embeds) * 0.05
-        expanded_embeds = expanded_embeds + noise
+        if self.training and self.config.get('text_noise_std', 0) > 0:
+            expanded_embeds = expanded_embeds + torch.randn_like(expanded_embeds) * self.config['text_noise_std']
 
         return torch.stack(images), torch.stack(dogs), torch.stack(threshs), expanded_embeds, torch.stack(masks)
 
@@ -76,21 +77,21 @@ class CustomCollator:
 def main():
     # 配置参数
     config = {
-        'data_root': '../dataset/Drone/classes_dataset/classes_dataset/',
-        'batch_size': 24,
+        'data_root': str(BASE_DIR.parent / 'Drone/classes_dataset/classes_dataset'),
+        'batch_size': 2,
         'num_workers': 0,
         'lr': 5e-4,
         'lr_step': 30,
-        'lr_gamma': 0.7,
+        'lr_gamma': 0.5,
         'epochs':1000,
         'early_stop_patience': 20,
         'num_classes': 5,  # 数据集类别
         'result_dir': f'./results/run_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
         'text_embed_dim': 512,  # CLIP文本嵌入维度
-        'max_text_len': 32,  # 最大文本长度
-        'pretrained_encoder_path': 'pretrained_resnet_encoder.pth',  # 预训练的编码器路径
+        'max_text_len': 1,  # 缓存的是全局 CLIP 向量，不是假设的词序列
+        'pretrained_encoder_path': str(BASE_DIR / 'pretrained_resnet_encoder.pth'),
 
-        'edge_weight': 0.3,       # 边缘损失权重
+        'edge_weight': 1,       # 边缘损失权重
         'edge_start_epoch': 30,  # 边缘损失开始轮数
     }
 
@@ -113,7 +114,8 @@ def main():
         config['pretrained_encoder_path'] = None
 
     # 创建自定义collator
-    collator = CustomCollator(config)
+    collator = CustomCollator(config, training=True)
+    val_collator = CustomCollator(config, training=False)
 
     # 创建数据集和数据加载器
     train_dataset = DroneDataset(
@@ -130,7 +132,7 @@ def main():
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
-        shuffle=False,
+        shuffle=True,
         num_workers=config['num_workers'],
         collate_fn=collator,
         pin_memory=False,  # 设置为False避免pin memory错误
@@ -141,7 +143,7 @@ def main():
         batch_size=config['batch_size'],
         shuffle=False,
         num_workers=config['num_workers'],
-        collate_fn=collator,
+        collate_fn=val_collator,
         pin_memory=False  # 设置为False避免pin memory错误
     )
 

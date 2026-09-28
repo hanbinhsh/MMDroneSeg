@@ -10,14 +10,8 @@ class DiceLoss(nn.Module):
         self.smooth = smooth
 
     def forward(self, pred, target):
-        pred = torch.softmax(pred, dim=1)
-        pred = torch.argmax(pred, dim=1)
-        pred = pred.contiguous().view(-1)
-        target = target.contiguous().view(-1)
-
-        intersection = (pred == target).float().sum()
-        dice = (2. * intersection + self.smooth) / (pred.numel() + target.numel() + self.smooth)
-        return 1 - dice
+        from experiments.losses import SoftDice
+        return SoftDice(smooth=self.smooth)(pred, target)
 
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2.0, alpha=None, reduction='mean', ignore_index=255):
@@ -56,14 +50,15 @@ class FocalLoss(nn.Module):
             reduction='none',
             ignore_index=self.ignore_index
         )
-        pt = pt.gather(1, target.unsqueeze(1)).squeeze(1)  # shape (N, H, W)
+        valid = target != self.ignore_index
+        pt = pt.gather(1, target.masked_fill(~valid, 0).unsqueeze(1)).squeeze(1)
 
         # Compute the focal loss
         focal_loss = ((1 - pt) ** self.gamma) * loss
 
         # Apply reduction
         if self.reduction == 'mean':
-            return focal_loss[target != self.ignore_index].mean()
+            return focal_loss.sum() / valid.sum().clamp_min(1)
         elif self.reduction == 'sum':
             return focal_loss[target != self.ignore_index].sum()
         else:
@@ -96,14 +91,16 @@ class EdgeLoss(nn.Module):
         return edge
 
     def forward(self, pred, target):
-        # pred: [B, C, H, W] logits -> get argmax
-        pred = torch.argmax(pred, dim=1, keepdim=True).float()  # [B, 1, H, W]
-        target = target.unsqueeze(1).float()  # [B, 1, H, W]
-
-        edge_pred = self.detect_edges(pred)
-        edge_target = self.detect_edges(target)
-
-        return self.loss_fn(edge_pred, edge_target)
+        # Each class is a separate binary field: numeric class IDs have no distance.
+        from experiments.losses import boundary_target
+        _, valid = boundary_target(target)
+        probs = pred.float().softmax(1)
+        onehot = F.one_hot(target.masked_fill(target == 255, 0), pred.shape[1]).permute(0, 3, 1, 2).float()
+        shape = probs.shape
+        edge_pred = self.detect_edges(probs.reshape(-1, 1, *shape[-2:])).reshape(shape)
+        edge_target = self.detect_edges(onehot.reshape(-1, 1, *shape[-2:])).reshape(shape)
+        difference = (edge_pred - edge_target).abs() * valid.unsqueeze(1)
+        return difference.sum() / (valid.sum() * shape[1]).clamp_min(1)
 
 def compute_metrics(preds, labels, num_classes):
     """
